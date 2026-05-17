@@ -28,35 +28,49 @@ export default function Dashboard() {
   const [cameraError, setCameraError] = useState("");
   const [imageError, setImageError] = useState("");
 
-  // Để reload stream khi bật/tắt camera hoặc khi lỗi
+  // Dùng để reload stream camera
   const [streamKey, setStreamKey] = useState(Date.now());
 
-  // ===== Derived Data =====
+  // =========================
+  // DERIVED DATA
+  // =========================
   const emptyCount = slots.filter((slot) => slot.status === "empty").length;
 
   const activeTickets = tickets.filter((ticket) => ticket.status === "active");
 
-  // ===== Helpers =====
+  // =========================
+  // HELPERS
+  // =========================
   function setQrResult(result) {
     setQr(result);
     setImageError("");
   }
 
-  // ===== API Calls =====
+  // =========================
+  // LOAD QR MỚI NHẤT
+  // =========================
   async function loadLatestQr() {
     try {
-      setLoading(true);
-      setError("");
-
       const result = await getLatestQr();
+
+      // Không có QR
+      if (!result || !result.image_url) {
+        setQr(null);
+        setImageError("");
+        return;
+      }
+
+      // Có QR
       setQrResult(result);
     } catch (err) {
-      setError(err.message || "Không tải được QR");
-    } finally {
-      setLoading(false);
+      setQr(null);
+      setImageError("");
     }
   }
 
+  // =========================
+  // LOAD TRẠNG THÁI BÃI XE
+  // =========================
   async function loadParkingState() {
     try {
       const [slotResult, ticketResult] = await Promise.all([
@@ -71,6 +85,9 @@ export default function Dashboard() {
     }
   }
 
+  // =========================
+  // TẠO QR THỦ CÔNG
+  // =========================
   async function handleCreateQr(event) {
     event.preventDefault();
 
@@ -93,6 +110,9 @@ export default function Dashboard() {
     }
   }
 
+  // =========================
+  // BẬT/TẮT CAMERA
+  // =========================
   async function handleCameraCommand(command) {
     try {
       setCameraLoading(true);
@@ -113,6 +133,9 @@ export default function Dashboard() {
     }
   }
 
+  // =========================
+  // XE VÀO
+  // =========================
   async function handleEntryDetect() {
     try {
       setLoading(true);
@@ -125,7 +148,10 @@ export default function Dashboard() {
         return;
       }
 
-      setQrResult(result.ticket.qr);
+      if (result?.ticket?.qr) {
+        setQrResult(result.ticket.qr);
+      }
+
       await loadParkingState();
     } catch (err) {
       setError(err.message || "Không gọi được detectEntry()");
@@ -134,6 +160,9 @@ export default function Dashboard() {
     }
   }
 
+  // =========================
+  // DEMO YOLO
+  // =========================
   async function handleDemoYoloUpdate() {
     try {
       setError("");
@@ -141,7 +170,9 @@ export default function Dashboard() {
       const nextSlots = (
         slots.length
           ? slots
-          : ["A1", "A2", "B1", "B2", "C1", "C2"].map((slot_id) => ({ slot_id }))
+          : ["A1", "A2", "B1", "B2", "C1", "C2"].map((slot_id) => ({
+              slot_id,
+            }))
       ).map((slot, index) => ({
         slot_id: slot.slot_id,
         status: index % 3 === 0 ? "occupied" : "empty",
@@ -154,24 +185,30 @@ export default function Dashboard() {
     }
   }
 
-  // ===== Initial Load =====
+  // =========================
+  // INITIAL LOAD
+  // =========================
   useEffect(() => {
     loadLatestQr();
     loadParkingState();
 
     const timer = window.setInterval(() => {
+      loadLatestQr();
       loadParkingState();
     }, 1000);
 
     return () => window.clearInterval(timer);
   }, []);
 
-  // ===== URLs =====
+  // =========================
+  // URLS
+  // =========================
   const qrImageUrl = qr?.display_url || qr?.image_url || "";
-
   const streamUrl = `${ESP32_STREAM_URL}?t=${streamKey}`;
 
-  // ===== Render =====
+  // =========================
+  // RENDER
+  // =========================
   return (
     <main className="page">
       <section className="dashboard">
@@ -188,17 +225,16 @@ export default function Dashboard() {
             </div>
 
             <div className="stat-card">
-              <span>Xe đang gửi</span>
-              <strong>{activeTickets.length}</strong>
-            </div>
-
-            <div className="stat-card">
               <span>Tổng slot</span>
               <strong>{slots.length}</strong>
             </div>
           </section>
 
           <p className="api-badge">{API_BASE_URL}</p>
+
+          {error ? (
+            <p style={{ color: "red", marginTop: "8px" }}>{error}</p>
+          ) : null}
         </div>
 
         {/* ================= MAIN GRID ================= */}
@@ -207,6 +243,25 @@ export default function Dashboard() {
           <section className="camera-panel">
             <div className="section-heading compact">
               <h2>ESP32-CAM Live Stream</h2>
+
+              <div className="actions">
+                <button
+                  type="button"
+                  onClick={() => handleCameraCommand("on")}
+                  disabled={cameraLoading}
+                >
+                  Camera ON
+                </button>
+
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => handleCameraCommand("off")}
+                  disabled={cameraLoading}
+                >
+                  Camera OFF
+                </button>
+              </div>
             </div>
 
             <div className="camera-view">
@@ -230,8 +285,41 @@ export default function Dashboard() {
             </div>
           </section>
 
-          {/* ============ SLOT PANEL ============ */}
+          {/* ============ QR PANEL ============ */}
           <section className="slot-panel">
+            <div className="qr-frame">
+              {qrImageUrl ? (
+                <img
+                  key={qrImageUrl}
+                  src={qrImageUrl}
+                  alt="Mã QR Smart Parking"
+                  onLoad={() => setImageError("")}
+                  onError={() =>
+                    setImageError(`Không tải được ảnh QR: ${qrImageUrl}`)
+                  }
+                />
+              ) : null}
+            </div>
+
+            {imageError ? <p className="image-error">{imageError}</p> : null}
+
+            <div className="qr-meta">
+              {qr ? (
+                <>
+                  <h1 style={{ textAlign: "center" }}>Quét QR để vào cổng</h1>
+
+                  <p style={{ textAlign: "center" }}>
+                    {qr.created_at
+                      ? `Tạo lúc ${new Date(qr.created_at).toLocaleString()}`
+                      : ""}
+                  </p>
+                </>
+              ) : null}
+            </div>
+          </section>
+
+          {/* ============ SLOT MAP ============ */}
+          <div className="qr-control">
             <div className="section-heading compact">
               <h2>Parking Slot Map</h2>
 
@@ -259,65 +347,10 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-          </section>
-
-          {/* ============ QR CONTROL ============ */}
-          <div className="qr-control">
-            <div className="section-heading compact">
-              <h2>Nhập mã trong điện thoại để ra</h2>
-            </div>
-
-            <form className="qr-form" onSubmit={handleCreateQr}>
-              <textarea
-                id="qr-data"
-                value={data}
-                onChange={(e) => setData(e.target.value)}
-                placeholder="VD: BIENSO:59A-12345 | SLOT:A01"
-                rows="3"
-              />
-
-              <div className="actions">
-                <button type="submit" disabled={loading}>
-                  {loading ? "Đang tạo..." : "Xác nhận"}
-                </button>
-              </div>
-            </form>
-
-            {error ? <p className="error">{error}</p> : null}
           </div>
 
-          {/* ============ QR PREVIEW ============ */}
-          <aside className="preview" aria-live="polite">
-            <div className="qr-frame">
-              {qrImageUrl ? (
-                <img
-                  key={qrImageUrl}
-                  src={qrImageUrl}
-                  alt="Mã QR Smart Parking"
-                  onLoad={() => setImageError("")}
-                  onError={() =>
-                    setImageError(`Không tải được ảnh QR: ${qrImageUrl}`)
-                  }
-                />
-              ) : (
-                <span>Chưa có QR</span>
-              )}
-            </div>
-
-            {imageError ? <p className="image-error">{imageError}</p> : null}
-
-            <div className="qr-meta">
-              <p className="label">Dữ liệu QR</p>
-
-              <p className="qr-data">{qr?.data || "Đang chờ dữ liệu"}</p>
-
-              <p className="time">
-                {qr?.created_at
-                  ? `Tạo lúc ${new Date(qr.created_at).toLocaleString()}`
-                  : ""}
-              </p>
-            </div>
-          </aside>
+          {/* ============ PREVIEW ============ */}
+          <aside className="preview" aria-live="polite"></aside>
         </section>
       </section>
     </main>
