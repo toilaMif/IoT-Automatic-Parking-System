@@ -10,6 +10,7 @@ import {
   getCameraStatus,
   getLatestQr,
   getSlots,
+  getStatus,
   getTickets,
   turnCameraOff,
   turnCameraOn,
@@ -20,6 +21,7 @@ export default function Dashboard() {
   const [qr, setQr] = useState(null);
   const [slots, setSlots] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const [status, setStatus] = useState(null);
   const [exitCode, setExitCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(false);
@@ -65,6 +67,15 @@ export default function Dashboard() {
       setError("");
     } catch (err) {
       setError(err.message || "Cannot load parking state");
+    }
+  }
+
+  async function loadStatus() {
+    try {
+      const result = await getStatus();
+      setStatus(result);
+    } catch {
+      setStatus(null);
     }
   }
 
@@ -120,7 +131,7 @@ export default function Dashboard() {
         return;
       }
       setExitCode("");
-      await loadParkingState();
+      await Promise.all([loadParkingState(), loadStatus()]);
     } catch (err) {
       setError(err.message || "Cannot process exit");
     } finally {
@@ -197,9 +208,11 @@ export default function Dashboard() {
   useEffect(() => {
     loadLatestQr();
     loadParkingState();
+    loadStatus();
     const timer = window.setInterval(() => {
       loadLatestQr();
       loadParkingState();
+      loadStatus();
     }, 1500);
     return () => window.clearInterval(timer);
   }, []);
@@ -326,6 +339,12 @@ export default function Dashboard() {
               <div className="section-heading compact">
                 <h2>Exit Gate</h2>
               </div>
+              {status?.exit_gate_waiting ? (
+                <div className="exit-alert">
+                  <strong>Exit Gate</strong>
+                  <span>Nhap so QR de ra</span>
+                </div>
+              ) : null}
               <form className="exit-form" onSubmit={handleExitSubmit}>
                 <input
                   value={exitCode}

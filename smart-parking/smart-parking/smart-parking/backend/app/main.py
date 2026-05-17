@@ -1,4 +1,6 @@
 from datetime import datetime
+import threading
+import time
 
 import requests
 from fastapi import FastAPI, Request
@@ -7,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import store
-from app.config import ESP32_CAM_STREAM_URL, IMG_DIR, QR_DIR, UPLOAD_DIR
+from app.config import ESP32_CAM_STREAM_URL, IMG_DIR, PUBLIC_BASE_URL, QR_DIR, UPLOAD_DIR
 from app.schemas import (
     CameraUrlRequest,
     CommandRequest,
@@ -25,7 +27,7 @@ from app.services.parking_ai import (
     normalize_slot_status,
 )
 from app.services.qr import generate_qr
-from app.services.telegram import send_message, send_photo, telegram_ready
+from app.services.telegram import get_updates, send_message, send_photo, telegram_ready
 from app.utils import extract_qr_code, get_now
 
 
@@ -56,11 +58,11 @@ def build_upload_url(request: Request, filename: str) -> str:
     return str(request.base_url).rstrip("/") + f"/uploads/{filename}"
 
 
-def build_qr_url(request: Request, filename: str) -> str:
-    return str(request.base_url).rstrip("/") + f"/img/qrs/{filename}"
+def build_qr_url(base_url: str, filename: str) -> str:
+    return base_url.rstrip("/") + f"/img/qrs/{filename}"
 
 
-def create_parking_qr(request: Request) -> dict:
+def create_parking_qr(base_url: str) -> dict:
     if store.get_empty_count() <= 0:
         return {"success": False, "message": "Parking full", "empty_count": 0}
 
@@ -79,7 +81,7 @@ def create_parking_qr(request: Request) -> dict:
         "data": qr_data,
         "qr_code": qr_code,
         "filename": filename,
-        "image_url": build_qr_url(request, filename),
+        "image_url": build_qr_url(base_url, filename),
         "created_at": get_now(),
     }
 
@@ -100,14 +102,19 @@ def update_slot_map(slots: list[dict]) -> None:
 
 
 def capture_frame_from_stream(request: Request) -> str | None:
+    previous_filename = (
+        store.latest_camera_frame.get("filename")
+        if store.latest_camera_frame else None
+    )
+
     still_url = store.esp32_cam_stream_url.replace("/stream", "/capture")
 
     try:
-        response = requests.get(still_url, timeout=(5, 15))
+        response = requests.get(still_url, timeout=(2, 4))
         content_type = response.headers.get("content-type", "")
 
         if response.status_code == 200 and "image" in content_type:
-            filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".jpg"
+            filename = datetime.now().strftime("%Y%m%d_%H%M%S_%f") + ".jpg"
             filepath = UPLOAD_DIR / filename
 
             with open(filepath, "wb") as image_file:
@@ -125,6 +132,21 @@ def capture_frame_from_stream(request: Request) -> str | None:
         print("Camera capture HTTP:", response.status_code, content_type)
     except Exception as exc:
         print("Camera capture endpoint error:", exc)
+
+    try:
+        store.set_command("capture_image")
+        deadline = time.time() + 12
+
+        while time.time() < deadline:
+            latest = store.latest_camera_frame
+            if latest and latest.get("filename") != previous_filename:
+                print("Camera upload received:", latest.get("image_url"))
+                return latest.get("image_url")
+            time.sleep(0.25)
+
+        print("Camera upload wait timed out")
+    except Exception as exc:
+        print("Camera upload command error:", exc)
 
     try:
         response = requests.get(
@@ -158,7 +180,7 @@ def capture_frame_from_stream(request: Request) -> str | None:
         if not jpg_bytes:
             return None
 
-        filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".jpg"
+        filename = datetime.now().strftime("%Y%m%d_%H%M%S_%f") + ".jpg"
         filepath = UPLOAD_DIR / filename
 
         with open(filepath, "wb") as image_file:
@@ -190,10 +212,85 @@ def format_ticket_for_response(ticket: dict) -> dict:
     }
 
 
+def handle_telegram_command(text: str) -> None:
+    command = (text or "").strip().split()[0].lower()
+
+    if command in {"/start", "/help"}:
+        send_message(
+            "Smart Parking commands:\n"
+            "/qr - tao QR moi hien tren web\n"
+            "/open_entry - mo cong vao\n"
+            "/open_exit - mo cong ra\n"
+            "/status - xem trang thai"
+        )
+        return
+
+    if command in {"/qr", "/create_qr"}:
+        result = create_parking_qr(PUBLIC_BASE_URL)
+        if result.get("success"):
+            qr = result["qr"]
+            send_photo(
+                qr.get("image_url"),
+                f"QR moi: {result['qr_code']}\nQR da hien tren web.",
+            )
+        else:
+            send_message(result.get("message", "Khong tao duoc QR"))
+        return
+
+    if command in {"/open_entry", "/mo_vao"}:
+        store.set_command("open_entry_gate")
+        send_message("Da gui lenh mo cong vao.")
+        return
+
+    if command in {"/open_exit", "/mo_ra"}:
+        store.set_command("open_exit_gate")
+        send_message("Da gui lenh mo cong ra.")
+        return
+
+    if command == "/status":
+        send_message(
+            "Smart Parking status\n"
+            f"Command: {store.current_command}\n"
+            f"Slot trong: {store.get_empty_count()}\n"
+            f"Ve dang hoat dong: {len(store.get_active_tickets())}\n"
+            f"Cho xe ra: {store.exit_gate_waiting}"
+        )
+        return
+
+    if command.startswith("/"):
+        send_message("Lenh khong hop le. Gui /help de xem lenh.")
+
+
+def telegram_poll_loop() -> None:
+    while True:
+        updates = get_updates(store.telegram_offset, timeout=20)
+        for update in updates:
+            store.telegram_offset = max(
+                store.telegram_offset,
+                int(update.get("update_id", 0)) + 1,
+            )
+            message = update.get("message") or {}
+            text = message.get("text") or ""
+            if text:
+                handle_telegram_command(text)
+        time.sleep(1)
+
+
+def start_telegram_polling() -> None:
+    if store.telegram_polling_started or not telegram_ready():
+        return
+
+    store.telegram_polling_started = True
+    thread = threading.Thread(target=telegram_poll_loop, daemon=True)
+    thread.start()
+    print("Telegram polling started")
+
+
 @app.on_event("startup")
 def startup_event():
     store.esp32_cam_stream_url = ESP32_CAM_STREAM_URL
     clear_all_qr_files()
+    start_telegram_polling()
 
 
 @app.get("/")
@@ -207,6 +304,8 @@ def get_status():
     return {
         "current_command": store.current_command,
         "last_updated": store.last_updated,
+        "exit_gate_waiting": store.exit_gate_waiting,
+        "exit_gate_detected_at": store.exit_gate_detected_at,
         "empty_count": store.get_empty_count(),
         "active_vehicles": active_count,
         "total_tickets": len(store.tickets),
@@ -256,7 +355,7 @@ def camera_capture():
 @app.post("/api/upload")
 async def upload_image(request: Request):
     image_bytes = await request.body()
-    filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".jpg"
+    filename = datetime.now().strftime("%Y%m%d_%H%M%S_%f") + ".jpg"
     filepath = UPLOAD_DIR / filename
 
     with open(filepath, "wb") as image_file:
@@ -343,7 +442,7 @@ def set_camera_url(payload: CameraUrlRequest):
 
 @app.post("/api/entry/detect")
 def entry_detect(request: Request):
-    return create_parking_qr(request)
+    return create_parking_qr(str(request.base_url))
 
 
 @app.post("/api/qr")
@@ -356,7 +455,7 @@ def create_qr(payload: QRRequest, request: Request):
             "data": "",
             "image_url": None,
         }
-    return create_parking_qr(request)
+    return create_parking_qr(str(request.base_url))
 
 
 @app.get("/api/qr/latest")
@@ -514,7 +613,7 @@ def detect_slots(payload: SlotDetectRequest, request: Request):
 
 @app.post("/api/parking/motion-ended")
 def parking_motion_ended(request: Request):
-    image_url = capture_frame_from_stream(request) or latest_image_url()
+    image_url = latest_image_url() or capture_frame_from_stream(request)
     image_path = None
     if image_url:
         filename = image_url.split("?")[0].split("/")[-1]
@@ -532,8 +631,25 @@ def parking_motion_ended(request: Request):
 
 @app.post("/api/exit/detect")
 def exit_detect():
+    store.exit_gate_waiting = True
+    store.exit_gate_detected_at = get_now()
     store.set_command("wait_exit_code")
-    return {"success": True, "command": store.current_command}
+    return {
+        "success": True,
+        "message": "Exit vehicle detected",
+        "command": store.current_command,
+        "exit_gate_waiting": store.exit_gate_waiting,
+        "exit_gate_detected_at": store.exit_gate_detected_at,
+    }
+
+
+@app.post("/api/exit/cancel")
+def exit_cancel():
+    store.exit_gate_waiting = False
+    store.exit_gate_detected_at = None
+    if store.current_command == "wait_exit_code":
+        store.set_command("idle")
+    return {"success": True, "exit_gate_waiting": False}
 
 
 @app.post("/api/exit/by-qr")
@@ -570,6 +686,8 @@ def process_exit_by_qr(payload: ExitQRRequest, request: Request):
         store.parking_slots[slot_id]["updated_at"] = now
 
     store.ticket_history.append(ticket.copy())
+    store.exit_gate_waiting = False
+    store.exit_gate_detected_at = None
     store.set_command("open_exit_gate")
 
     caption = (

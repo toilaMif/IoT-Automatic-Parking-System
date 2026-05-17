@@ -20,6 +20,9 @@ ESP32_CAM_STREAM_URL = os.getenv(
     "ESP32_CAM_STREAM_URL",
     "http://10.237.28.240:81/stream",
 )
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://10.237.28.105:8000")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "")
+YOLO_SLOT_CONFIG = os.getenv("YOLO_SLOT_CONFIG", "")

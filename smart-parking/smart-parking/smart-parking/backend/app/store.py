@@ -9,6 +9,10 @@ last_updated = None
 latest_qr = None
 latest_camera_frame = None
 esp32_cam_stream_url = ESP32_CAM_STREAM_URL
+exit_gate_waiting = False
+exit_gate_detected_at = None
+telegram_offset = 0
+telegram_polling_started = False
 
 parking_slots = {
     "S1": {"slot_id": "S1", "status": "empty", "updated_at": get_now()},

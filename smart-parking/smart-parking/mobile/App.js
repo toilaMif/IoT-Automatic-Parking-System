@@ -1,9 +1,4 @@
-<<<<<<< HEAD:smart-parking/mobile/App.js
-// App.js
-import { useEffect, useMemo, useState } from "react";
-=======
 import { useEffect, useMemo, useRef, useState } from "react";
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
 import {
   Alert,
   Linking,
@@ -13,25 +8,19 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { CameraView, useCameraPermissions } from "expo-camera";
 
-<<<<<<< HEAD:smart-parking/mobile/App.js
-// =========================
-// CẤU HÌNH API BACKEND
-// =========================
 const API_BASE_URL = "http://10.237.28.105:8000";
-
-// =========================
-// TÁCH DỮ LIỆU QR THÀNH TỪNG PHẦN
-// =========================
-function parseQrData(value) {
-  if (!value) return [];
-=======
-const API_BASE_URL = "http://10.237.28.105:8000";
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+const ISSUE_OPTIONS = [
+  "Khong mo cong",
+  "Khong hien QR",
+  "Khong quet duoc QR",
+  "Khong nhap duoc ma ra",
+];
 
 function parseQrData(value) {
   if (!value) return [];
@@ -41,36 +30,6 @@ function parseQrData(value) {
   }));
 }
 
-<<<<<<< HEAD:smart-parking/mobile/App.js
-// =========================
-// LẤY 5 SỐ CUỐI
-// Ví dụ: PARKING-12345 -> 12345
-// =========================
-function extractQrCode(value) {
-  if (!value) return "";
-
-  const digits = value.replace(/\D/g, "");
-
-  if (digits.length < 5) return "";
-
-  return digits.slice(-5);
-}
-
-// =========================
-// GỬI QR ĐÃ QUÉT LÊN BACKEND
-// =========================
-async function saveScannedQr(qrText) {
-  const response = await fetch(`${API_BASE_URL}/api/qr/scanned`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      data: qrText,
-    }),
-  });
-
-=======
 function extractQrCode(value) {
   if (!value) return "";
   const match = value.trim().match(/^(?:PARKING-)?(\d{5})$/);
@@ -102,67 +61,30 @@ async function reportIssue(qrCode, message) {
     throw new Error(`Backend error ${response.status}`);
   }
 
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
   return await response.json();
 }
 
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
-
   const [scanning, setScanning] = useState(true);
   const [scanResult, setScanResult] = useState("");
   const [qrCode, setQrCode] = useState("");
   const [saving, setSaving] = useState(false);
-<<<<<<< HEAD:smart-parking/mobile/App.js
-
-  const parsedData = useMemo(
-    () => parseQrData(scanResult),
-    [scanResult]
-  );
-=======
   const [reporting, setReporting] = useState(false);
+  const [selectedIssue, setSelectedIssue] = useState(ISSUE_OPTIONS[0]);
+  const [issueDetail, setIssueDetail] = useState("");
+
   const scanLockRef = useRef(false);
   const invalidAlertRef = useRef(false);
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
-
+  const parsedData = useMemo(() => parseQrData(scanResult), [scanResult]);
   const hasPermission = permission?.granted;
 
-  // =========================
-  // XIN QUYỀN CAMERA
-  // =========================
   useEffect(() => {
-    if (
-      permission &&
-      !permission.granted &&
-      permission.canAskAgain
-    ) {
+    if (permission && !permission.granted && permission.canAskAgain) {
       requestPermission();
     }
   }, [permission, requestPermission]);
 
-<<<<<<< HEAD:smart-parking/mobile/App.js
-  // =========================
-  // XỬ LÝ KHI QUÉT QR
-  // =========================
-  async function handleBarcodeScanned(result) {
-    // Không cho quét nhiều lần
-    if (!scanning || saving) {
-      return;
-    }
-
-    const qrText = result.data || "";
-    const code = extractQrCode(qrText);
-
-    if (!code) {
-      Alert.alert("Lỗi", "QR không hợp lệ.");
-      return;
-    }
-
-    // Dừng quét
-    setScanning(false);
-    setSaving(true);
-
-=======
   async function handleBarcodeScanned(result) {
     if (!scanning || saving || scanLockRef.current) return;
 
@@ -172,7 +94,7 @@ export default function App() {
     if (!code) {
       if (!invalidAlertRef.current) {
         invalidAlertRef.current = true;
-        Alert.alert("Error", "Invalid parking QR.", [
+        Alert.alert("Loi", "QR khong hop le.", [
           {
             text: "OK",
             onPress: () => {
@@ -187,99 +109,42 @@ export default function App() {
     scanLockRef.current = true;
     setScanning(false);
     setSaving(true);
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
     setScanResult(qrText);
     setQrCode(code);
 
     try {
-<<<<<<< HEAD:smart-parking/mobile/App.js
-      // Gửi lên backend
-      const response = await saveScannedQr(qrText);
-
-      if (!response.success) {
-        Alert.alert(
-          "Lỗi",
-          response.message || "Không lưu được QR."
-        );
-=======
       const response = await saveScannedQr(qrText);
       if (!response.success) {
-        Alert.alert("Error", response.message || "Cannot save QR.");
+        Alert.alert("Loi", response.message || "Khong luu duoc QR.");
         scanLockRef.current = false;
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
         return;
       }
 
       Alert.alert(
-<<<<<<< HEAD:smart-parking/mobile/App.js
-        "Quét thành công",
-        `Mã vé của bạn là: ${code}\n\n` +
-          `Khi lấy xe, vui lòng nhập đúng mã ${code}.`
+        "Quet thanh cong",
+        `Ma ve cua ban la: ${code}\n\nKhi lay xe, nhap dung ma nay.`
       );
     } catch (error) {
-      Alert.alert(
-        "Lỗi",
-        error.message || "Không kết nối được server."
-      );
-=======
-        "Scan success",
-        `Your ticket code is ${code}.\nUse this code at the exit gate.`
-      );
-    } catch (error) {
-      Alert.alert("Error", error.message || "Cannot connect to server.");
+      Alert.alert("Loi", error.message || "Khong ket noi duoc server.");
       scanLockRef.current = false;
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
     } finally {
       setSaving(false);
     }
   }
 
-  // =========================
-  // COPY QR
-  // =========================
   async function copyResult() {
     if (!scanResult) return;
-<<<<<<< HEAD:smart-parking/mobile/App.js
-
     await Clipboard.setStringAsync(scanResult);
-
-    Alert.alert(
-      "Đã copy",
-      "Nội dung QR đã được copy."
-    );
-=======
-    await Clipboard.setStringAsync(scanResult);
-    Alert.alert("Copied", "QR content copied.");
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+    Alert.alert("Da sao chep", "Noi dung QR da duoc copy.");
   }
 
-  // =========================
-  // MỞ URL
-  // =========================
   function openResult() {
-<<<<<<< HEAD:smart-parking/mobile/App.js
-    if (
-      !scanResult ||
-      !scanResult.startsWith("http")
-    ) {
-      return;
-    }
-
-=======
     if (!scanResult || !scanResult.startsWith("http")) return;
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
     Linking.openURL(scanResult);
   }
 
-  // =========================
-  // QUÉT LẠI
-  // =========================
   function resetScanner() {
     if (saving) return;
-<<<<<<< HEAD:smart-parking/mobile/App.js
-
-=======
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
     setScanResult("");
     setQrCode("");
     setScanning(true);
@@ -290,250 +155,159 @@ export default function App() {
   async function handleReportIssue() {
     try {
       setReporting(true);
-      const response = await reportIssue(
-        qrCode,
-        qrCode ? `Customer reported a gate/QR issue for ticket ${qrCode}` : "Customer reported QR/gate issue before scanning"
-      );
+      const detail = issueDetail.trim();
+      const issueMessage = [
+        `Su co: ${selectedIssue}`,
+        qrCode ? `Ma ve: ${qrCode}` : "Chua co ma ve",
+        detail ? `Ghi chu: ${detail}` : "",
+      ].filter(Boolean).join("\n");
+
+      const response = await reportIssue(qrCode, issueMessage);
       Alert.alert(
-        response.success ? "Reported" : "Error",
-        response.success ? "Issue sent to parking owner." : response.message || "Cannot send issue."
+        response.success ? "Da gui" : "Loi",
+        response.success
+          ? "Da gui bao loi cho chu bai xe."
+          : response.message || "Khong gui duoc bao loi."
       );
     } catch (error) {
-      Alert.alert("Error", error.message || "Cannot send issue.");
+      Alert.alert("Loi", error.message || "Khong gui duoc bao loi.");
     } finally {
       setReporting(false);
     }
   }
 
-  // =========================
-  // CHƯA KIỂM TRA QUYỀN
-  // =========================
   if (!permission) {
     return (
       <SafeAreaView style={styles.centerPage}>
         <StatusBar barStyle="dark-content" />
-<<<<<<< HEAD:smart-parking/mobile/App.js
-        <Text style={styles.darkTitle}>
-          Đang kiểm tra camera...
-        </Text>
-=======
-        <Text style={styles.darkTitle}>Checking camera...</Text>
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+        <Text style={styles.darkTitle}>Dang kiem tra camera...</Text>
       </SafeAreaView>
     );
   }
 
-  // =========================
-  // CHƯA CÓ QUYỀN CAMERA
-  // =========================
   if (!hasPermission) {
     return (
       <SafeAreaView style={styles.centerPage}>
         <StatusBar barStyle="dark-content" />
-<<<<<<< HEAD:smart-parking/mobile/App.js
-
-        <Text style={styles.darkTitle}>
-          Cần quyền camera
-        </Text>
-
+        <Text style={styles.darkTitle}>Can quyen camera</Text>
         <Text style={styles.description}>
-          Khách hàng cần cho phép camera để quét
-          mã QR gửi xe.
-        </Text>
-
-        <Pressable
-          style={styles.primaryButton}
-          onPress={requestPermission}
-        >
-          <Text style={styles.primaryButtonText}>
-            Cấp quyền camera
-          </Text>
-=======
-        <Text style={styles.darkTitle}>Camera permission needed</Text>
-        <Text style={styles.description}>
-          Allow camera access to scan your parking QR.
+          Vui long cap quyen camera de quet ma QR gui xe.
         </Text>
         <Pressable style={styles.primaryButton} onPress={requestPermission}>
-          <Text style={styles.primaryButtonText}>Allow camera</Text>
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+          <Text style={styles.primaryButtonText}>Cap quyen camera</Text>
         </Pressable>
       </SafeAreaView>
     );
   }
 
-  // =========================
-  // GIAO DIỆN CHÍNH
-  // =========================
   return (
     <SafeAreaView style={styles.page}>
       <StatusBar barStyle="light-content" />
 
-<<<<<<< HEAD:smart-parking/mobile/App.js
-      {/* HEADER */}
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>
-          Smart Parking
-        </Text>
-        <Text style={styles.title}>
-          Quét QR gửi xe
-        </Text>
-=======
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Smart Parking</Text>
-        <Text style={styles.title}>Scan entry QR</Text>
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+        <Text style={styles.title}>Quet QR gui xe</Text>
       </View>
 
-      {/* CAMERA */}
       <View style={styles.cameraWrap}>
         {scanning ? (
           <CameraView
             style={styles.camera}
             facing="back"
-            barcodeScannerSettings={{
-              barcodeTypes: ["qr"],
-            }}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
             onBarcodeScanned={handleBarcodeScanned}
           />
         ) : (
           <View style={styles.scanDone}>
-<<<<<<< HEAD:smart-parking/mobile/App.js
-            <Text style={styles.scanDoneText}>
-              Đã quét thành công
-            </Text>
-=======
-            <Text style={styles.scanDoneText}>Scan completed</Text>
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+            <Text style={styles.scanDoneText}>Da quet thanh cong</Text>
           </View>
         )}
-
         <View style={styles.scanBox} />
       </View>
 
-<<<<<<< HEAD:smart-parking/mobile/App.js
-      {/* KẾT QUẢ */}
-      <ScrollView
-        style={styles.resultPanel}
-        contentContainerStyle={styles.resultContent}
-      >
-        <Text style={styles.label}>
-          Mã vé 5 số
-        </Text>
-
-        <Text style={styles.codeText}>
-          {qrCode || "-----"}
-        </Text>
-
-        <Text style={styles.notice}>
-          {qrCode
-            ? `Khi lấy xe, vui lòng nhập đúng mã ${qrCode}.`
-            : "Đưa camera vào mã QR để quét."}
-        </Text>
-
-        <Text style={styles.label}>
-          Nội dung QR
-        </Text>
-
-        <Text style={styles.resultText}>
-          {scanResult || "Chưa có dữ liệu."}
-        </Text>
-=======
       <ScrollView style={styles.resultPanel} contentContainerStyle={styles.resultContent}>
-        <Text style={styles.label}>5-digit ticket code</Text>
+        <Text style={styles.label}>Ma ve 5 so</Text>
         <Text style={styles.codeText}>{qrCode || "-----"}</Text>
 
         <Text style={styles.notice}>
           {qrCode
-            ? `Use code ${qrCode} when you leave the parking lot.`
-            : "Point your camera at the parking QR."}
+            ? `Khi lay xe, nhap dung ma ${qrCode}.`
+            : "Dua camera vao ma QR de quet."}
         </Text>
 
-        <Text style={styles.label}>QR content</Text>
-        <Text style={styles.resultText}>{scanResult || "No data yet."}</Text>
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+        <Text style={styles.label}>Noi dung QR</Text>
+        <Text style={styles.resultText}>{scanResult || "Chua co du lieu."}</Text>
 
         {parsedData.length > 1 ? (
           <View style={styles.detailList}>
             {parsedData.map((item) => (
-              <View
-                key={item.id}
-                style={styles.detailItem}
-              >
-                <Text style={styles.detailText}>
-                  {item.value}
-                </Text>
+              <View key={item.id} style={styles.detailItem}>
+                <Text style={styles.detailText}>{item.value}</Text>
               </View>
             ))}
           </View>
         ) : null}
 
-        {/* ACTIONS */}
         <View style={styles.actions}>
-<<<<<<< HEAD:smart-parking/mobile/App.js
-          <Pressable
-            style={styles.primaryButton}
-            onPress={resetScanner}
-          >
-            <Text style={styles.primaryButtonText}>
-              {scanResult
-                ? "Quét lại"
-                : "Bắt đầu quét"}
-=======
           <Pressable style={styles.primaryButton} onPress={resetScanner}>
             <Text style={styles.primaryButtonText}>
-              {scanResult ? "Scan again" : "Start scan"}
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+              {scanResult ? "Quet lai" : "Bat dau quet"}
             </Text>
           </Pressable>
 
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={copyResult}
-            disabled={!scanResult}
-          >
-            <Text
-              style={styles.secondaryButtonText}
-            >
-              Copy
-            </Text>
+          <Pressable style={styles.secondaryButton} onPress={copyResult} disabled={!scanResult}>
+            <Text style={styles.secondaryButtonText}>Copy</Text>
           </Pressable>
 
           <Pressable style={styles.warningButton} onPress={handleReportIssue} disabled={reporting}>
-            <Text style={styles.primaryButtonText}>Report issue</Text>
+            <Text style={styles.primaryButtonText}>Bao loi</Text>
           </Pressable>
 
           {scanResult.startsWith("http") ? (
-<<<<<<< HEAD:smart-parking/mobile/App.js
-            <Pressable
-              style={styles.secondaryButton}
-              onPress={openResult}
-            >
-              <Text
-                style={styles.secondaryButtonText}
-              >
-                Mở link
-              </Text>
-=======
             <Pressable style={styles.secondaryButton} onPress={openResult}>
-              <Text style={styles.secondaryButtonText}>Open link</Text>
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+              <Text style={styles.secondaryButtonText}>Mo link</Text>
             </Pressable>
           ) : null}
         </View>
+
+        <Text style={styles.label}>Chon su co</Text>
+        <View style={styles.issueOptions}>
+          {ISSUE_OPTIONS.map((item) => (
+            <Pressable
+              key={item}
+              style={[
+                styles.issueButton,
+                selectedIssue === item && styles.issueButtonActive,
+              ]}
+              onPress={() => setSelectedIssue(item)}
+            >
+              <Text
+                style={[
+                  styles.issueButtonText,
+                  selectedIssue === item && styles.issueButtonTextActive,
+                ]}
+              >
+                {item}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <TextInput
+          style={styles.issueInput}
+          value={issueDetail}
+          onChangeText={setIssueDetail}
+          placeholder="Ghi chu them neu can..."
+          placeholderTextColor="#7b8794"
+          multiline
+        />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// =========================
-// STYLES
-// =========================
 const styles = StyleSheet.create({
-  page: {
-    flex: 1,
-    backgroundColor: "#18242d",
-  },
-
+  page: { flex: 1, backgroundColor: "#18242d" },
   centerPage: {
     flex: 1,
     alignItems: "center",
@@ -541,40 +315,20 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: "#f4f7fb",
   },
-
-  header: {
-    paddingHorizontal: 22,
-    paddingTop: 18,
-    paddingBottom: 14,
-  },
-
+  header: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 14 },
   eyebrow: {
     color: "#8ed2e4",
     fontSize: 13,
     fontWeight: "800",
     textTransform: "uppercase",
   },
-
-  title: {
-    marginTop: 6,
-    color: "#ffffff",
-    fontSize: 32,
-    fontWeight: "900",
-  },
-<<<<<<< HEAD:smart-parking/mobile/App.js
-
-=======
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
+  title: { marginTop: 6, color: "#ffffff", fontSize: 32, fontWeight: "900" },
   darkTitle: {
     color: "#17202a",
     fontSize: 28,
     fontWeight: "900",
     textAlign: "center",
   },
-<<<<<<< HEAD:smart-parking/mobile/App.js
-
-=======
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
   description: {
     marginVertical: 16,
     color: "#536273",
@@ -582,7 +336,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     textAlign: "center",
   },
-
   cameraWrap: {
     height: 420,
     marginHorizontal: 16,
@@ -590,11 +343,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "#000000",
   },
-
-  camera: {
-    flex: 1,
-  },
-
+  camera: { flex: 1 },
   scanBox: {
     position: "absolute",
     top: "22%",
@@ -605,20 +354,13 @@ const styles = StyleSheet.create({
     borderColor: "#f0b84b",
     borderRadius: 18,
   },
-
   scanDone: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#21313d",
   },
-
-  scanDoneText: {
-    color: "#ffffff",
-    fontSize: 20,
-    fontWeight: "900",
-  },
-
+  scanDoneText: { color: "#ffffff", fontSize: 20, fontWeight: "900" },
   resultPanel: {
     flex: 1,
     marginTop: 16,
@@ -626,20 +368,13 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     backgroundColor: "#ffffff",
   },
-
-  resultContent: {
-    padding: 22,
-    paddingBottom: 40,
-  },
-
+  resultContent: { padding: 22, paddingBottom: 40 },
   label: {
     color: "#126180",
     fontSize: 13,
     fontWeight: "900",
     textTransform: "uppercase",
     marginTop: 10,
-<<<<<<< HEAD:smart-parking/mobile/App.js
-=======
   },
   codeText: {
     marginTop: 8,
@@ -655,26 +390,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#17202a",
     lineHeight: 24,
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
   },
-
-  codeText: {
-    marginTop: 8,
-    fontSize: 42,
-    fontWeight: "900",
-    color: "#e67e22",
-    textAlign: "center",
-  },
-
-  notice: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: "700",
-    textAlign: "center",
-    color: "#17202a",
-    lineHeight: 24,
-  },
-
   resultText: {
     marginTop: 10,
     color: "#17202a",
@@ -682,31 +398,10 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 25,
   },
-
-  detailList: {
-    marginTop: 14,
-    gap: 8,
-  },
-
-  detailItem: {
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: "#eef4f7",
-  },
-
-  detailText: {
-    color: "#21313d",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-
-  actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 20,
-  },
-
+  detailList: { marginTop: 14, gap: 8 },
+  detailItem: { padding: 12, borderRadius: 10, backgroundColor: "#eef4f7" },
+  detailText: { color: "#21313d", fontSize: 15, fontWeight: "700" },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 20 },
   primaryButton: {
     minHeight: 48,
     alignItems: "center",
@@ -715,9 +410,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     backgroundColor: "#126180",
   },
-<<<<<<< HEAD:smart-parking/mobile/App.js
-
-=======
   warningButton: {
     minHeight: 48,
     alignItems: "center",
@@ -726,13 +418,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     backgroundColor: "#b42318",
   },
->>>>>>> 4403d86b (11h44):smart-parking/smart-parking/mobile/App.js
-  primaryButtonText: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-
+  primaryButtonText: { color: "#ffffff", fontSize: 15, fontWeight: "900" },
   secondaryButton: {
     minHeight: 48,
     alignItems: "center",
@@ -741,10 +427,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     backgroundColor: "#e8edf3",
   },
-
-  secondaryButtonText: {
+  secondaryButtonText: { color: "#17202a", fontSize: 15, fontWeight: "900" },
+  issueOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  issueButton: {
+    minHeight: 42,
+    justifyContent: "center",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#e8edf3",
+  },
+  issueButtonActive: { backgroundColor: "#126180" },
+  issueButtonText: { color: "#17202a", fontSize: 13, fontWeight: "900" },
+  issueButtonTextActive: { color: "#ffffff" },
+  issueInput: {
+    minHeight: 74,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#d7dee8",
+    borderRadius: 10,
+    padding: 12,
     color: "#17202a",
+    backgroundColor: "#f9fbfd",
     fontSize: 15,
-    fontWeight: "900",
+    fontWeight: "700",
+    textAlignVertical: "top",
   },
 });

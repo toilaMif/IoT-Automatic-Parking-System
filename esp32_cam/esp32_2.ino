@@ -39,6 +39,13 @@ const char* serverUrl = "http://10.237.28.105:8000";
 WebServer streamServer(81);
 
 // =========================
+// PIR MOTION SENSOR
+// =========================
+#define PIR_PIN 48
+const unsigned long MOTION_END_DELAY = 3000;
+const unsigned long MOTION_REPORT_COOLDOWN = 8000;
+
+// =========================
 // CAMERA PINS
 // =========================
 #define PWDN_GPIO_NUM     -1
@@ -59,6 +66,16 @@ WebServer streamServer(81);
 #define PCLK_GPIO_NUM     13
 
 bool cameraReady = false;
+unsigned long lastCommandPoll = 0;
+bool motionActive = false;
+unsigned long lastMotionAt = 0;
+unsigned long lastMotionReportAt = 0;
+
+void processCommand(String cmd);
+void pollCommand();
+bool captureImage();
+void handleMotionSensor();
+void notifyMotionEnded();
 
 // =========================
 // WIFI
@@ -169,6 +186,9 @@ void handleStream() {
 
     esp_camera_fb_return(fb);
 
+    pollCommand();
+    handleMotionSensor();
+
     delay(100);  // ~10 FPS
   }
 }
@@ -219,14 +239,28 @@ void startStreamServer() {
 // =========================
 // UPLOAD IMAGE
 // =========================
-void captureImage() {
-  if (!cameraReady) return;
+bool captureImage() {
+  if (!cameraReady && !initCamera()) {
+    Serial.println("Capture skipped: camera not ready");
+    return false;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Capture skipped: WiFi not connected");
+    return false;
+  }
 
   camera_fb_t* fb = esp_camera_fb_get();
-  if (!fb) return;
+  if (!fb) {
+    Serial.println("Capture failed: no frame buffer");
+    return false;
+  }
 
   HTTPClient http;
   String url = String(serverUrl) + "/api/upload";
+
+  Serial.println("Uploading captured image...");
+  Serial.println(url);
 
   http.begin(url);
   http.setTimeout(30000);
@@ -241,6 +275,77 @@ void captureImage() {
 
   http.end();
   esp_camera_fb_return(fb);
+
+  return code == 200;
+}
+
+// =========================
+// NOTIFY MOTION ENDED
+// =========================
+void notifyMotionEnded() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  HTTPClient http;
+  String url = String(serverUrl) + "/api/parking/motion-ended";
+
+  Serial.println("Notifying backend: motion ended");
+  Serial.println(url);
+
+  http.begin(url);
+  http.setTimeout(30000);
+  http.addHeader("Content-Type", "application/json");
+
+  int code = http.POST("{}");
+
+  Serial.printf("Motion ended HTTP Code: %d\n", code);
+  if (code > 0) {
+    Serial.println(http.getString());
+  } else {
+    Serial.println(http.errorToString(code));
+  }
+
+  http.end();
+}
+
+// =========================
+// MOTION SENSOR HANDLER
+// =========================
+void handleMotionSensor() {
+  int motion = digitalRead(PIR_PIN);
+  unsigned long now = millis();
+
+  if (motion == HIGH) {
+    if (!motionActive) {
+      Serial.println("PIR motion detected.");
+      motionActive = true;
+    }
+    lastMotionAt = now;
+    return;
+  }
+
+  if (!motionActive) {
+    return;
+  }
+
+  if (now - lastMotionAt < MOTION_END_DELAY) {
+    return;
+  }
+
+  motionActive = false;
+
+  if (now - lastMotionReportAt < MOTION_REPORT_COOLDOWN) {
+    Serial.println("Motion ended, skipped by cooldown.");
+    return;
+  }
+
+  lastMotionReportAt = now;
+  Serial.println("PIR motion ended. Capturing parking image...");
+
+  if (captureImage()) {
+    notifyMotionEnded();
+  } else {
+    Serial.println("Motion capture/upload failed.");
+  }
 }
 
 // =========================
@@ -282,11 +387,56 @@ void resetCommand() {
 }
 
 // =========================
+// PROCESS COMMAND
+// =========================
+void processCommand(String cmd) {
+  if (cmd == "capture_image") {
+    captureImage();
+    resetCommand();
+  }
+  else if (cmd == "camera_off") {
+    stopCamera();
+    resetCommand();
+  }
+  else if (cmd == "camera_on") {
+    if (!cameraReady && initCamera()) {
+      startStreamServer();
+    }
+    resetCommand();
+  }
+}
+
+// =========================
+// POLL COMMAND
+// =========================
+void pollCommand() {
+  if (millis() - lastCommandPoll <= 1000) {
+    return;
+  }
+
+  lastCommandPoll = millis();
+
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  String cmd = getCommand();
+
+  if (cmd != "idle") {
+    Serial.println("Command: " + cmd);
+  }
+
+  processCommand(cmd);
+}
+
+// =========================
 // SETUP
 // =========================
 void setup() {
   Serial.begin(115200);
   delay(2000);
+
+  pinMode(PIR_PIN, INPUT);
 
   connectWiFi();
 
@@ -306,27 +456,6 @@ void loop() {
     connectWiFi();
   }
 
-  static unsigned long lastPoll = 0;
-
-  if (millis() - lastPoll > 2000) {
-    lastPoll = millis();
-
-    String cmd = getCommand();
-    Serial.println("Command: " + cmd);
-
-    if (cmd == "capture_image") {
-      captureImage();
-      resetCommand();
-    }
-    else if (cmd == "camera_off") {
-      stopCamera();
-      resetCommand();
-    }
-    else if (cmd == "camera_on") {
-      if (!cameraReady && initCamera()) {
-        startStreamServer();
-      }
-      resetCommand();
-    }
-  }
+  pollCommand();
+  handleMotionSensor();
 }

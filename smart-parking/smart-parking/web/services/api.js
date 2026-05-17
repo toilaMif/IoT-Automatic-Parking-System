@@ -108,6 +108,13 @@ async function request(path, options = {}) {
 }
 
 // ======================================================
+// STATUS APIs
+// ======================================================
+export function getStatus() {
+  return request("/api/status");
+}
+
+// ======================================================
 // QR APIs
 // ======================================================
 export function createQr(data) {

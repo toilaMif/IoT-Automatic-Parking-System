@@ -61,3 +61,29 @@ def send_photo(photo_url: str | None, caption: str = "") -> bool:
     except Exception as exc:
         print("Telegram send photo error:", exc)
         return False
+
+
+def get_updates(offset: int = 0, timeout: int = 20) -> list[dict]:
+    if not telegram_ready():
+        return []
+
+    try:
+        response = requests.get(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates",
+            params={
+                "offset": offset,
+                "timeout": timeout,
+                "allowed_updates": '["message"]',
+            },
+            timeout=timeout + 5,
+        )
+
+        data = response.json()
+        if not data.get("ok"):
+            print("Telegram getUpdates failed:", data)
+            return []
+
+        return data.get("result", [])
+    except Exception as exc:
+        print("Telegram getUpdates error:", exc)
+        return []

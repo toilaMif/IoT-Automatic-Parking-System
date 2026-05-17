@@ -336,6 +336,23 @@ textarea:focus {
   margin-bottom: 10px;
 }
 
+.exit-alert {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid rgba(240, 184, 75, 0.5);
+  border-radius: 8px;
+  color: #17202a;
+  background: #f0b84b;
+}
+
+.exit-alert strong,
+.exit-alert span {
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .exit-form input {
   min-width: 0;
   min-height: 32px;
