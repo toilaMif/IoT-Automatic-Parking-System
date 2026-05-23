@@ -1,0 +1,41 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Node / Expo / Vite
+node_modules/
+dist/
+.expo/
+.expo-shared/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Backend runtime data
+smart-parking/backend/uploads/
+smart-parking/backend/img/qrs/
+smart-parking/backend/model/*.pt
+smart-parking/backend/models/*.pt
+
+# Local notes / temporary files
+q.txt
+
+# Large generated reports can be kept locally unless intentionally shared.
+*.pptx
+*.docx

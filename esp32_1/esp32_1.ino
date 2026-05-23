@@ -19,13 +19,13 @@
 // =====================================================
 // WIFI CONFIG
 // =====================================================
-const char* ssid = "111";
-const char* password = "11111111t";
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
 
 // =====================================================
 // FASTAPI SERVER
 // =====================================================
-const char* serverUrl = "http://10.237.28.105:8000";
+const char* serverUrl = "http://BACKEND_IP:8000";
 
 // =====================================================
 // HC-SR04 PINS

@@ -1,250 +1,276 @@
-// src/pages/Dashboard.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   API_BASE_URL,
+  CAMERA_STREAM_URL,
   createQr,
   detectEntry,
+  detectSlots,
+  exitByQr,
+  getCameraStreamUrl,
+  getCameraStatus,
   getLatestQr,
   getSlots,
+  getStatus,
   getTickets,
   turnCameraOff,
   turnCameraOn,
   updateSlots,
 } from "../services/api.js";
 
-// URL stream trực tiếp từ ESP32-CAM
-const ESP32_STREAM_URL = "http://10.237.28.240:81/stream";
-
 export default function Dashboard() {
   const [qr, setQr] = useState(null);
   const [slots, setSlots] = useState([]);
   const [tickets, setTickets] = useState([]);
-  const [data, setData] = useState("");
-
+  const [status, setStatus] = useState(null);
+  const [exitCode, setExitCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(false);
-
   const [error, setError] = useState("");
   const [cameraError, setCameraError] = useState("");
+  const [cameraStatus, setCameraStatus] = useState("");
+  const [streamMode, setStreamMode] = useState("direct");
   const [imageError, setImageError] = useState("");
-
-  // Dùng để reload stream camera
   const [streamKey, setStreamKey] = useState(Date.now());
 
-  // =========================
-  // DERIVED DATA
-  // =========================
   const emptyCount = slots.filter((slot) => slot.status === "empty").length;
+  const activeTickets = tickets.filter(
+    (ticket) => ticket.status !== "completed",
+  );
+  const latestTicket = tickets[0] || null;
 
-  const activeTickets = tickets.filter((ticket) => ticket.status === "active");
+  const streamUrl = useMemo(
+    () => getCameraStreamUrl(streamMode),
+    [streamKey, streamMode],
+  );
 
-  // =========================
-  // HELPERS
-  // =========================
   function setQrResult(result) {
-    setQr(result);
+    const nextQr = result?.qr || result;
+    setQr(nextQr?.image_url ? nextQr : null);
     setImageError("");
   }
 
-  // =========================
-  // LOAD QR MỚI NHẤT
-  // =========================
   async function loadLatestQr() {
     try {
       const result = await getLatestQr();
-
-      // Không có QR
-      if (!result || !result.image_url) {
-        setQr(null);
-        setImageError("");
-        return;
-      }
-
-      // Có QR
       setQrResult(result);
-    } catch (err) {
+    } catch {
       setQr(null);
-      setImageError("");
     }
   }
 
-  // =========================
-  // LOAD TRẠNG THÁI BÃI XE
-  // =========================
   async function loadParkingState() {
     try {
       const [slotResult, ticketResult] = await Promise.all([
         getSlots(),
         getTickets(),
       ]);
-
       setSlots(slotResult?.slots || []);
       setTickets(ticketResult?.tickets || []);
+      setError("");
     } catch (err) {
-      setError(err.message || "Không tải được trạng thái bãi xe");
+      setError(err.message || "Cannot load parking state");
     }
   }
 
-  // =========================
-  // TẠO QR THỦ CÔNG
-  // =========================
-  async function handleCreateQr(event) {
-    event.preventDefault();
+  async function loadStatus() {
+    try {
+      const result = await getStatus();
+      setStatus(result);
+    } catch {
+      setStatus(null);
+    }
+  }
 
-    if (!data.trim()) {
-      setError("Vui lòng nhập nội dung QR");
+  async function handleEntryDetect() {
+    try {
+      setLoading(true);
+      setError("");
+      const result = await detectEntry();
+      if (!result.success) {
+        setError(result.message || "Cannot create entry QR");
+        return;
+      }
+      setQrResult(result);
+      await loadParkingState();
+    } catch (err) {
+      setError(err.message || "Cannot call entry detect");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCreateQr() {
+    try {
+      setLoading(true);
+      setError("");
+      const result = await createQr();
+      if (!result.success) {
+        setError(result.message || "Cannot create QR");
+        return;
+      }
+      setQrResult(result);
+      await loadParkingState();
+    } catch (err) {
+      setError(err.message || "Cannot create QR");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleExitSubmit(event) {
+    event.preventDefault();
+    if (!exitCode.trim()) {
+      setError("Please enter the 5-digit ticket code");
       return;
     }
 
     try {
       setLoading(true);
       setError("");
-
-      const result = await createQr(data.trim());
-      setQrResult(result);
-      setData("");
+      const result = await exitByQr(exitCode.trim());
+      if (!result.success) {
+        setError(result.message || "Exit code rejected");
+        return;
+      }
+      setExitCode("");
+      await Promise.all([loadParkingState(), loadStatus()]);
     } catch (err) {
-      setError(err.message || "Không tạo được QR");
+      setError(err.message || "Cannot process exit");
     } finally {
       setLoading(false);
     }
   }
 
-  // =========================
-  // BẬT/TẮT CAMERA
-  // =========================
   async function handleCameraCommand(command) {
     try {
       setCameraLoading(true);
       setCameraError("");
-
       if (command === "on") {
         await turnCameraOn();
       } else {
         await turnCameraOff();
       }
-
-      // Reload stream
       setStreamKey(Date.now());
     } catch (err) {
-      setCameraError(err.message || "Không gửi được lệnh camera");
+      setCameraError(err.message || "Cannot send camera command");
     } finally {
       setCameraLoading(false);
     }
   }
 
-  // =========================
-  // XE VÀO
-  // =========================
-  async function handleEntryDetect() {
+  async function handleCameraStatus() {
+    try {
+      setCameraLoading(true);
+      setCameraError("");
+      const result = await getCameraStatus();
+      if (result.success) {
+        setCameraStatus(`Backend camera OK: ${result.camera_url}`);
+      } else {
+        setCameraStatus(
+          `Backend camera error: ${result.error || result.status_code || "unknown"}`,
+        );
+      }
+    } catch (err) {
+      setCameraStatus("");
+      setCameraError(err.message || "Cannot check camera");
+    } finally {
+      setCameraLoading(false);
+    }
+  }
+
+  async function handleDemoSlotUpdate() {
+    try {
+      setError("");
+      const nextSlots = (
+        slots.length
+          ? slots
+          : ["S1", "S2", "S3", "S4"].map((slot_id) => ({ slot_id }))
+      ).map((slot, index) => ({
+        slot_id: slot.slot_id,
+        status: index % 3 === 0 ? "occupied" : "empty",
+      }));
+      await updateSlots(nextSlots);
+      await loadParkingState();
+    } catch (err) {
+      setError(err.message || "Cannot update slots");
+    }
+  }
+
+  async function handleDetectSlots() {
     try {
       setLoading(true);
       setError("");
-
-      const result = await detectEntry();
-
-      if (!result.success) {
-        setError(result.message || "Không tạo được vé vào cổng");
-        return;
-      }
-
-      if (result?.ticket?.qr) {
-        setQrResult(result.ticket.qr);
-      }
-
+      await detectSlots(null, "web");
       await loadParkingState();
     } catch (err) {
-      setError(err.message || "Không gọi được detectEntry()");
+      setError(err.message || "Cannot detect slots");
     } finally {
       setLoading(false);
     }
   }
 
-  // =========================
-  // DEMO YOLO
-  // =========================
-  async function handleDemoYoloUpdate() {
-    try {
-      setError("");
-
-      const nextSlots = (
-        slots.length
-          ? slots
-          : ["A1", "A2", "B1", "B2", "C1", "C2"].map((slot_id) => ({
-              slot_id,
-            }))
-      ).map((slot, index) => ({
-        slot_id: slot.slot_id,
-        status: index % 3 === 0 ? "occupied" : "empty",
-      }));
-
-      await updateSlots(nextSlots);
-      await loadParkingState();
-    } catch (err) {
-      setError(err.message || "Không cập nhật được slot");
-    }
-  }
-
-  // =========================
-  // INITIAL LOAD
-  // =========================
   useEffect(() => {
     loadLatestQr();
     loadParkingState();
-
+    loadStatus();
     const timer = window.setInterval(() => {
       loadLatestQr();
       loadParkingState();
-    }, 1000);
-
+      loadStatus();
+    }, 1500);
     return () => window.clearInterval(timer);
   }, []);
 
-  // =========================
-  // URLS
-  // =========================
   const qrImageUrl = qr?.display_url || qr?.image_url || "";
-  const streamUrl = `${ESP32_STREAM_URL}?t=${streamKey}`;
 
-  // =========================
-  // RENDER
-  // =========================
   return (
     <main className="page">
       <section className="dashboard">
-        {/* ================= TOPBAR ================= */}
         <div className="topbar">
           <div>
+            <p className="eyebrow">Smart Parking</p>
             <h1>Auto Parking TT</h1>
           </div>
 
           <section className="stats-grid">
             <div className="stat-card">
-              <span>Chỗ trống</span>
+              <span>Empty</span>
               <strong>{emptyCount}</strong>
             </div>
-
             <div className="stat-card">
-              <span>Tổng slot</span>
+              <span>Total</span>
               <strong>{slots.length}</strong>
             </div>
+            {/* <div className="stat-card">
+              <span>Active</span>
+              <strong>{activeTickets.length}</strong>
+            </div> */}
           </section>
 
           <p className="api-badge">{API_BASE_URL}</p>
-
-          {error ? (
-            <p style={{ color: "red", marginTop: "8px" }}>{error}</p>
-          ) : null}
+          {error ? <p className="error">{error}</p> : null}
         </div>
 
-        {/* ================= MAIN GRID ================= */}
         <section className="screen-grid">
-          {/* ============ CAMERA PANEL ============ */}
           <section className="camera-panel">
             <div className="section-heading compact">
-              <h2>ESP32-CAM Live Stream</h2>
-
+              <h2>ESP32-CAM</h2>
               <div className="actions">
+                <button
+                  type="button"
+                  onClick={() => setStreamMode("direct")}
+                  disabled={streamMode === "direct"}
+                >
+                  Direct
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setStreamMode("proxy")}
+                  disabled={streamMode === "proxy"}
+                >
+                  Proxy
+                </button>
                 <button
                   type="button"
                   onClick={() => handleCameraCommand("on")}
@@ -252,7 +278,6 @@ export default function Dashboard() {
                 >
                   Camera ON
                 </button>
-
                 <button
                   type="button"
                   className="secondary"
@@ -261,6 +286,14 @@ export default function Dashboard() {
                 >
                   Camera OFF
                 </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={handleCameraStatus}
+                  disabled={cameraLoading}
+                >
+                  Test
+                </button>
               </div>
             </div>
 
@@ -268,73 +301,70 @@ export default function Dashboard() {
               <img
                 key={streamKey}
                 src={streamUrl}
-                alt="ESP32-CAM Live Stream"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  borderRadius: "16px",
-                }}
+                alt="ESP32-CAM live stream"
                 onLoad={() => setCameraError("")}
-                onError={() => setCameraError("Không kết nối được ESP32-CAM")}
+                onError={() => setCameraError("Cannot connect ESP32-CAM")}
               />
             </div>
-
             <div className="camera-meta">
-              {cameraError ? <strong>{cameraError}</strong> : null}
+              {cameraError ? (
+                <strong>{cameraError}</strong>
+              ) : (
+                <span>
+                  {streamMode === "direct"
+                    ? CAMERA_STREAM_URL
+                    : `${API_BASE_URL}/api/camera/stream`}
+                </span>
+              )}
+              {cameraStatus ? <span>{cameraStatus}</span> : null}
             </div>
           </section>
 
-          {/* ============ QR PANEL ============ */}
           <section className="slot-panel">
             <div className="qr-frame">
               {qrImageUrl ? (
                 <img
                   key={qrImageUrl}
                   src={qrImageUrl}
-                  alt="Mã QR Smart Parking"
+                  alt="Smart Parking QR"
                   onLoad={() => setImageError("")}
                   onError={() =>
-                    setImageError(`Không tải được ảnh QR: ${qrImageUrl}`)
+                    setImageError(`Cannot load QR image: ${qrImageUrl}`)
                   }
                 />
-              ) : null}
+              ) : (
+                <span>No QR</span>
+              )}
             </div>
-
             {imageError ? <p className="image-error">{imageError}</p> : null}
-
             <div className="qr-meta">
-              {qr ? (
-                <>
-                  <h1 style={{ textAlign: "center" }}>Quét QR để vào cổng</h1>
-
-                  <p style={{ textAlign: "center" }}>
-                    {qr.created_at
-                      ? `Tạo lúc ${new Date(qr.created_at).toLocaleString()}`
-                      : ""}
-                  </p>
-                </>
-              ) : null}
+              <p className="label">Entry QR</p>
+              <p className="qr-data">
+                {qr?.data || "Waiting for entry sensor"}
+              </p>
+              <p className="time">
+                {qr?.created_at
+                  ? `Created ${new Date(qr.created_at).toLocaleString()}`
+                  : ""}
+              </p>
             </div>
           </section>
 
-          {/* ============ SLOT MAP ============ */}
           <div className="qr-control">
             <div className="section-heading compact">
-              <h2>Parking Slot Map</h2>
-
+              <h2>Parking Slots</h2>
               <div className="actions">
-                <button type="button" onClick={handleDemoYoloUpdate}>
-                  Demo
+                <button type="button" onClick={handleDemoSlotUpdate}>
+                  Detect
                 </button>
 
                 <button
                   type="button"
                   className="secondary"
-                  onClick={handleEntryDetect}
+                  onClick={handleCreateQr}
                   disabled={loading}
                 >
-                  Xe vào
+                  QR
                 </button>
               </div>
             </div>
@@ -349,8 +379,72 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* ============ PREVIEW ============ */}
-          <aside className="preview" aria-live="polite"></aside>
+          <aside className="preview" aria-live="polite">
+            <div>
+              <div className="section-heading compact">
+                <h2>Exit Gate</h2>
+              </div>
+              {status?.exit_gate_waiting ? (
+                <div className="exit-alert">
+                  <strong>Exit Gate</strong>
+                  <span>Nhap so QR de ra</span>
+                </div>
+              ) : null}
+              <form className="exit-form" onSubmit={handleExitSubmit}>
+                <input
+                  value={exitCode}
+                  maxLength={12}
+                  placeholder="12345"
+                  onChange={(event) => setExitCode(event.target.value)}
+                />
+                <button type="submit" disabled={loading}>
+                  Open Exit
+                </button>
+              </form>
+
+              {/* <div className="ticket-list">
+                {tickets.slice(0, 8).map((ticket) => (
+                  <article key={ticket.qr_code} className="ticket-row">
+                    <strong>{ticket.qr_code}</strong>
+                    <span>{ticket.status}</span>
+                    <small>
+                      {ticket.fee
+                        ? `${ticket.fee} VND`
+                        : ticket.entry_time || ticket.created_at}
+                    </small>
+                  </article>
+                ))}
+              </div> */}
+            </div>
+
+            <div className="ticket-preview">
+              <h2>Latest Ticket</h2>
+              {latestTicket ? (
+                <>
+                  <p>
+                    QR {latestTicket.qr_code} - {latestTicket.status}
+                  </p>
+                  <p>In: {latestTicket.entry_time || "-"}</p>
+                  <p>Out: {latestTicket.exit_time || "-"}</p>
+                  <p>Fee: {latestTicket.fee || 0} VND</p>
+                  <div className="photo-grid">
+                    {latestTicket.entry_image ? (
+                      <img src={latestTicket.entry_image} alt="Entry vehicle" />
+                    ) : (
+                      <span>Entry image</span>
+                    )}
+                    {latestTicket.exit_image ? (
+                      <img src={latestTicket.exit_image} alt="Exit vehicle" />
+                    ) : (
+                      <span>Exit image</span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p>No ticket yet</p>
+              )}
+            </div>
+          </aside>
         </section>
       </section>
     </main>
