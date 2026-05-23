@@ -1,4 +1,4 @@
-# IoT Automatic Parking System
+<h1 align="center"> IoT Automatic Parking System </h1>
 
 <p align="center">
   <strong>Hệ thống bãi giữ xe tự động dùng ESP32, ESP32-CAM, FastAPI, React, Expo Mobile, QR Code, Telegram và AI nhận diện vị trí đỗ.</strong>
